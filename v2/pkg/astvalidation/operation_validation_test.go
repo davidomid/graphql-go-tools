@@ -5191,6 +5191,175 @@ func TestValidateFieldSelection(t *testing.T) {
 	})
 }
 
+func TestWithDisabledRules(t *testing.T) {
+	t.Run("disabling FieldSelectionMerging allows same field with differing nullability across inline fragments", func(t *testing.T) {
+		// When an interface has implementors that define the same field with different
+		// nullability (e.g. String! vs String), a query selecting that field through
+		// inline fragments on both types is rejected by the FieldSelectionMerging rule
+		// even though at runtime only one branch can ever execute.
+		// Disabling FieldSelectionMerging allows the query to pass.
+		definition := unsafeparser.ParseGraphqlDocumentStringWithBaseSchema(`
+			type Query {
+				thing: Thing
+			}
+			interface Thing {
+				id: ID!
+			}
+			type ThingA implements Thing {
+				id: ID!
+				value: String!
+			}
+			type ThingB implements Thing {
+				id: ID!
+				value: String
+			}
+		`)
+		operation := unsafeparser.ParseGraphqlDocumentString(`
+			{
+				thing {
+					... on ThingA { value }
+					... on ThingB { value }
+				}
+			}
+		`)
+
+		// With default rules, FieldSelectionMerging rejects this because
+		// ThingA.value (String!) and ThingB.value (String) have conflicting return types
+		validatorDefault := DefaultOperationValidator()
+		reportDefault := operationreport.Report{}
+		result := validatorDefault.Validate(&operation, &definition, &reportDefault)
+		assert.Equal(t, Invalid, result, "expected Invalid with default rules")
+		assert.True(t, reportDefault.HasErrors())
+		assert.Contains(t, reportDefault.Error(), "conflicting types 'String!' and 'String'")
+
+		// With FieldSelectionMerging disabled, the query is accepted
+		validatorDisabled := DefaultOperationValidator(WithDisabledRules(FieldSelectionMergingRule))
+		reportDisabled := operationreport.Report{}
+		result = validatorDisabled.Validate(&operation, &definition, &reportDisabled)
+		assert.Equal(t, Valid, result, "expected Valid with FieldSelectionMerging disabled")
+		assert.False(t, reportDisabled.HasErrors())
+	})
+
+	t.Run("disabling FieldSelectionMerging allows same field with differing nullability in deeply nested selections", func(t *testing.T) {
+		// Same nullability conflict but nested several levels deep through a
+		// connection-style pattern (parent -> children -> edges -> child -> creator).
+		definition := unsafeparser.ParseGraphqlDocumentStringWithBaseSchema(`
+			type Query {
+				parent(first: Int): ResultPage
+			}
+			type ResultPage {
+				entries: [Entry]
+			}
+			type Entry {
+				child: Child
+			}
+			type Child {
+				creator: Creator
+			}
+			union Creator = TypeX | TypeY
+			type TypeX {
+				name: String!
+			}
+			type TypeY {
+				name: String
+			}
+		`)
+		operation := unsafeparser.ParseGraphqlDocumentString(`
+			query {
+				parent(first: 100) {
+					entries {
+						child {
+							creator {
+								... on TypeX { name }
+								... on TypeY { name }
+							}
+						}
+					}
+				}
+			}
+		`)
+
+		// Default rules reject this: name: String! vs name: String
+		validatorDefault := DefaultOperationValidator()
+		reportDefault := operationreport.Report{}
+		result := validatorDefault.Validate(&operation, &definition, &reportDefault)
+		assert.Equal(t, Invalid, result)
+		assert.Contains(t, reportDefault.Error(), "conflicting types 'String!' and 'String'")
+
+		// With FieldSelectionMerging disabled, the query is accepted
+		validatorDisabled := DefaultOperationValidator(WithDisabledRules(FieldSelectionMergingRule))
+		reportDisabled := operationreport.Report{}
+		result = validatorDisabled.Validate(&operation, &definition, &reportDisabled)
+		assert.Equal(t, Valid, result)
+		assert.False(t, reportDisabled.HasErrors())
+	})
+
+	t.Run("disabling FieldSelections and FieldSelectionMerging allows undefined fields", func(t *testing.T) {
+		definition := unsafeparser.ParseGraphqlDocumentStringWithBaseSchema(`type Query { name: String! }`)
+		operation := unsafeparser.ParseGraphqlDocumentString(`query { age }`)
+
+		// With default rules, this should be invalid
+		validatorDefault := DefaultOperationValidator()
+		reportDefault := operationreport.Report{}
+		result := validatorDefault.Validate(&operation, &definition, &reportDefault)
+		assert.Equal(t, Invalid, result)
+
+		// With both field selection rules disabled, this should pass
+		validatorDisabled := DefaultOperationValidator(WithDisabledRules(FieldSelectionsRule, FieldSelectionMergingRule))
+		reportDisabled := operationreport.Report{}
+		result = validatorDisabled.Validate(&operation, &definition, &reportDisabled)
+		assert.Equal(t, Valid, result)
+	})
+
+	t.Run("disabling multiple rules", func(t *testing.T) {
+		definition := unsafeparser.ParseGraphqlDocumentStringWithBaseSchema(`type Query { name: String! }`)
+		operation := unsafeparser.ParseGraphqlDocumentString(`query { age }`)
+
+		validatorDisabled := DefaultOperationValidator(WithDisabledRules(
+			FieldSelectionsRule,
+			FieldSelectionMergingRule,
+		))
+		reportDisabled := operationreport.Report{}
+		result := validatorDisabled.Validate(&operation, &definition, &reportDisabled)
+		assert.Equal(t, Valid, result)
+	})
+
+	t.Run("disabling no rules behaves like default", func(t *testing.T) {
+		definition := unsafeparser.ParseGraphqlDocumentStringWithBaseSchema(`type Query { name: String! }`)
+		operation := unsafeparser.ParseGraphqlDocumentString(`query { age }`)
+
+		validatorDefault := DefaultOperationValidator()
+		reportDefault := operationreport.Report{}
+		resultDefault := validatorDefault.Validate(&operation, &definition, &reportDefault)
+
+		validatorNoDisabled := DefaultOperationValidator(WithDisabledRules())
+		reportNoDisabled := operationreport.Report{}
+		resultNoDisabled := validatorNoDisabled.Validate(&operation, &definition, &reportNoDisabled)
+
+		assert.Equal(t, resultDefault, resultNoDisabled)
+	})
+
+	t.Run("combining WithDisabledRules and WithApolloCompatibilityFlags", func(t *testing.T) {
+		definition := unsafeparser.ParseGraphqlDocumentStringWithBaseSchema(`type Query { name: String! }`)
+		operation := unsafeparser.ParseGraphqlDocumentString(`query { age }`)
+
+		// Disable FieldSelectionMerging but keep FieldSelections enabled with Apollo compatibility
+		validator := DefaultOperationValidator(
+			WithDisabledRules(FieldSelectionMergingRule),
+			WithApolloCompatibilityFlags(apollocompatibility.Flags{
+				UseGraphQLValidationFailedStatus: true,
+			}),
+		)
+		report := operationreport.Report{}
+		result := validator.Validate(&operation, &definition, &report)
+		assert.Equal(t, Invalid, result)
+		require.True(t, report.HasErrors())
+		// Should still have apollo compat error code
+		assert.Equal(t, errorcodes.GraphQLValidationFailed, report.ExternalErrors[0].ExtensionCode)
+		assert.Equal(t, http.StatusBadRequest, report.ExternalErrors[0].StatusCode)
+	})
+}
+
 var testDefinition = `
 directive @tag(name: String) on FIELD
 directive @stream(label: String) on FIELD

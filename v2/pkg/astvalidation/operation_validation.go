@@ -11,8 +11,33 @@ import (
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/operationreport"
 )
 
+// OperationValidationRuleName identifies a specific operation validation rule.
+type OperationValidationRuleName string
+
+const (
+	AllVariablesUsedRule                    OperationValidationRuleName = "AllVariablesUsed"
+	AllVariableUsesDefinedRule              OperationValidationRuleName = "AllVariableUsesDefined"
+	DocumentContainsExecutableOperationRule OperationValidationRuleName = "DocumentContainsExecutableOperation"
+	OperationNameUniquenessRule             OperationValidationRuleName = "OperationNameUniqueness"
+	LoneAnonymousOperationRule              OperationValidationRuleName = "LoneAnonymousOperation"
+	SubscriptionSingleRootFieldRule         OperationValidationRuleName = "SubscriptionSingleRootField"
+	FieldSelectionsRule                     OperationValidationRuleName = "FieldSelections"
+	FieldSelectionMergingRule               OperationValidationRuleName = "FieldSelectionMerging"
+	KnownArgumentsRule                      OperationValidationRuleName = "KnownArguments"
+	ValuesRule                              OperationValidationRuleName = "Values"
+	ArgumentUniquenessRule                  OperationValidationRuleName = "ArgumentUniqueness"
+	RequiredArgumentsRule                   OperationValidationRuleName = "RequiredArguments"
+	FragmentsRule                           OperationValidationRuleName = "Fragments"
+	DirectivesAreDefinedRule                OperationValidationRuleName = "DirectivesAreDefined"
+	DirectivesAreInValidLocationsRule       OperationValidationRuleName = "DirectivesAreInValidLocations"
+	VariableUniquenessRule                  OperationValidationRuleName = "VariableUniqueness"
+	DirectivesAreUniquePerLocationRule      OperationValidationRuleName = "DirectivesAreUniquePerLocation"
+	VariablesAreInputTypesRule              OperationValidationRuleName = "VariablesAreInputTypes"
+)
+
 type OperationValidatorOptions struct {
 	ApolloCompatibilityFlags apollocompatibility.Flags
+	DisabledRules            map[OperationValidationRuleName]struct{}
 }
 
 func WithApolloCompatibilityFlags(flags apollocompatibility.Flags) Option {
@@ -21,9 +46,28 @@ func WithApolloCompatibilityFlags(flags apollocompatibility.Flags) Option {
 	}
 }
 
+// WithDisabledRules returns an Option that disables the specified validation rules.
+// Disabled rules will not be registered on the validator.
+func WithDisabledRules(rules ...OperationValidationRuleName) Option {
+	return func(options *OperationValidatorOptions) {
+		if options.DisabledRules == nil {
+			options.DisabledRules = make(map[OperationValidationRuleName]struct{}, len(rules))
+		}
+		for _, rule := range rules {
+			options.DisabledRules[rule] = struct{}{}
+		}
+	}
+}
+
 type Option func(options *OperationValidatorOptions)
 
-// DefaultOperationValidator returns a fully initialized OperationValidator with all default rules registered
+type namedRule struct {
+	name OperationValidationRuleName
+	rule Rule
+}
+
+// DefaultOperationValidator returns a fully initialized OperationValidator with all default rules registered.
+// Use WithDisabledRules to skip specific rules.
 func DefaultOperationValidator(options ...Option) *OperationValidator {
 	var opts OperationValidatorOptions
 	for _, opt := range options {
@@ -40,24 +84,33 @@ func DefaultOperationValidator(options ...Option) *OperationValidator {
 		}
 	}
 
-	validator.RegisterRule(AllVariablesUsed())
-	validator.RegisterRule(AllVariableUsesDefined())
-	validator.RegisterRule(DocumentContainsExecutableOperation())
-	validator.RegisterRule(OperationNameUniqueness())
-	validator.RegisterRule(LoneAnonymousOperation())
-	validator.RegisterRule(SubscriptionSingleRootField())
-	validator.RegisterRule(FieldSelections())
-	validator.RegisterRule(FieldSelectionMerging())
-	validator.RegisterRule(KnownArguments())
-	validator.RegisterRule(Values())
-	validator.RegisterRule(ArgumentUniqueness())
-	validator.RegisterRule(RequiredArguments())
-	validator.RegisterRule(Fragments())
-	validator.RegisterRule(DirectivesAreDefined())
-	validator.RegisterRule(DirectivesAreInValidLocations())
-	validator.RegisterRule(VariableUniqueness())
-	validator.RegisterRule(DirectivesAreUniquePerLocation())
-	validator.RegisterRule(VariablesAreInputTypes())
+	defaultRules := []namedRule{
+		{AllVariablesUsedRule, AllVariablesUsed()},
+		{AllVariableUsesDefinedRule, AllVariableUsesDefined()},
+		{DocumentContainsExecutableOperationRule, DocumentContainsExecutableOperation()},
+		{OperationNameUniquenessRule, OperationNameUniqueness()},
+		{LoneAnonymousOperationRule, LoneAnonymousOperation()},
+		{SubscriptionSingleRootFieldRule, SubscriptionSingleRootField()},
+		{FieldSelectionsRule, FieldSelections()},
+		{FieldSelectionMergingRule, FieldSelectionMerging()},
+		{KnownArgumentsRule, KnownArguments()},
+		{ValuesRule, Values()},
+		{ArgumentUniquenessRule, ArgumentUniqueness()},
+		{RequiredArgumentsRule, RequiredArguments()},
+		{FragmentsRule, Fragments()},
+		{DirectivesAreDefinedRule, DirectivesAreDefined()},
+		{DirectivesAreInValidLocationsRule, DirectivesAreInValidLocations()},
+		{VariableUniquenessRule, VariableUniqueness()},
+		{DirectivesAreUniquePerLocationRule, DirectivesAreUniquePerLocation()},
+		{VariablesAreInputTypesRule, VariablesAreInputTypes()},
+	}
+
+	for _, nr := range defaultRules {
+		if _, disabled := opts.DisabledRules[nr.name]; disabled {
+			continue
+		}
+		validator.RegisterRule(nr.rule)
+	}
 
 	return &validator
 }

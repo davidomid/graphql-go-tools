@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wundergraph/graphql-go-tools/v2/pkg/astvalidation"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/graphqlerrors"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/operationreport"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/starwars"
@@ -94,6 +95,38 @@ func TestRequest_ValidateForSchema(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, result.Valid)
 		assert.Nil(t, result.Errors)
+	})
+
+	t.Run("should pass validation options to the validator", func(t *testing.T) {
+		schema, err := NewSchemaFromString(`
+			type Query { thing: Thing }
+			interface Thing { id: ID! }
+			type ThingA implements Thing { id: ID!, value: String! }
+			type ThingB implements Thing { id: ID!, value: String }
+		`)
+		require.NoError(t, err)
+
+		t.Run("default rules reject conflicting nullability", func(t *testing.T) {
+			request := Request{
+				Query: `{ thing { ... on ThingA { value } ... on ThingB { value } } }`,
+			}
+			result, err := request.ValidateForSchema(schema)
+			assert.NoError(t, err)
+			assert.False(t, result.Valid)
+			assert.Greater(t, result.Errors.Count(), 0)
+		})
+
+		t.Run("disabling FieldSelectionMerging allows conflicting nullability", func(t *testing.T) {
+			request := Request{
+				Query: `{ thing { ... on ThingA { value } ... on ThingB { value } } }`,
+			}
+			result, err := request.ValidateForSchema(schema,
+				astvalidation.WithDisabledRules(astvalidation.FieldSelectionMergingRule),
+			)
+			assert.NoError(t, err)
+			assert.True(t, result.Valid)
+			assert.Nil(t, result.Errors)
+		})
 	})
 }
 

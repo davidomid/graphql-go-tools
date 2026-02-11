@@ -17,6 +17,7 @@ import (
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/ast"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/astnormalization"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/astprinter"
+	"github.com/wundergraph/graphql-go-tools/v2/pkg/astvalidation"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/engine/datasource/introspection_datasource"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/engine/plan"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/engine/postprocess"
@@ -62,6 +63,7 @@ type ExecutionEngine struct {
 	resolver                 *resolve.Resolver
 	executionPlanCache       *lru.Cache
 	apolloCompatibilityFlags apollocompatibility.Flags
+	validationOptions        []astvalidation.Option
 }
 
 type WebsocketBeforeStartHook interface {
@@ -103,7 +105,7 @@ func WithRequestTraceOptions(options resolve.TraceOptions) ExecutionOptions {
 	}
 }
 
-func NewExecutionEngine(ctx context.Context, logger abstractlogger.Logger, engineConfig Configuration, resolverOptions resolve.ResolverOptions) (*ExecutionEngine, error) {
+func NewExecutionEngine(ctx context.Context, logger abstractlogger.Logger, engineConfig Configuration, resolverOptions resolve.ResolverOptions, validationOptions ...astvalidation.Option) (*ExecutionEngine, error) {
 	executionPlanCache, err := lru.New(1024)
 	if err != nil {
 		return nil, err
@@ -138,6 +140,7 @@ func NewExecutionEngine(ctx context.Context, logger abstractlogger.Logger, engin
 		apolloCompatibilityFlags: apollocompatibility.Flags{
 			ReplaceInvalidVarError: resolverOptions.ResolvableOptions.ApolloCompatibilityReplaceInvalidVarError,
 		},
+		validationOptions: validationOptions,
 	}, nil
 }
 
@@ -159,7 +162,7 @@ func (e *ExecutionEngine) Execute(ctx context.Context, operation *graphql.Reques
 	}
 
 	// Validate the operation against the schema.
-	if result, err := operation.ValidateForSchema(e.config.schema); err != nil {
+	if result, err := operation.ValidateForSchema(e.config.schema, e.validationOptions...); err != nil {
 		return err
 	} else if !result.Valid {
 		return result.Errors

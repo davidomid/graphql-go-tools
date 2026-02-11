@@ -92,6 +92,8 @@ type Planner[T Configuration] struct {
 
 	// gRPC
 	grpcClient grpc.ClientConnInterface
+
+	validationOptions []astvalidation.Option
 }
 
 func (p *Planner[T]) EnableSubgraphRequestMinifier() {
@@ -1688,18 +1690,10 @@ type printKit struct {
 var (
 	printKitPool = &sync.Pool{
 		New: func() any {
-			validator := astvalidation.DefaultOperationValidator()
-			// as we are creating operation programmatically in the graphql datasource planner,
-			// we need to catch incorrect behavior of the planner
-			// as graphql datasource planner should visit only selection sets which has fields,
-			// landed to the current planner
-			validator.RegisterRule(astvalidation.ValidateEmptySelectionSets())
-
 			return &printKit{
-				buf:       &bytes.Buffer{},
-				parser:    astparser.NewParser(),
-				printer:   astprinter.NewPrinter(nil),
-				validator: validator,
+				buf:     &bytes.Buffer{},
+				parser:  astparser.NewParser(),
+				printer: astprinter.NewPrinter(nil),
 				normalizer: astnormalization.NewWithOpts(
 					astnormalization.WithExtractVariables(),
 					astnormalization.WithRemoveFragmentDefinitions(),
@@ -1718,12 +1712,13 @@ type Factory[T Configuration] struct {
 	grpcClient         grpc.ClientConnInterface
 	grpcClientProvider func() grpc.ClientConnInterface
 	subscriptionClient GraphQLSubscriptionClient
+	validationOptions  []astvalidation.Option
 }
 
 // NewFactory (HTTP) creates a new factory for the GraphQL datasource planner
 // Graphql Datasource could be stateful in case you are using subscriptions,
 // make sure you are using the same execution context for all datasources
-func NewFactory(executionContext context.Context, httpClient *http.Client, subscriptionClient GraphQLSubscriptionClient) (*Factory[Configuration], error) {
+func NewFactory(executionContext context.Context, httpClient *http.Client, subscriptionClient GraphQLSubscriptionClient, validationOptions ...astvalidation.Option) (*Factory[Configuration], error) {
 	if executionContext == nil {
 		return nil, fmt.Errorf("execution context is required")
 	}
@@ -1738,13 +1733,14 @@ func NewFactory(executionContext context.Context, httpClient *http.Client, subsc
 		executionContext:   executionContext,
 		httpClient:         httpClient,
 		subscriptionClient: subscriptionClient,
+		validationOptions:  validationOptions,
 	}, nil
 }
 
 // NewFactoryGRPC creates a gRPC factory for the GraphQL datasource planner.
 // Graphql Datasource could be stateful in case you are using subscriptions,
 // make sure you are using the same execution context for all datasources.
-func NewFactoryGRPC(executionContext context.Context, grpcClient grpc.ClientConnInterface) (*Factory[Configuration], error) {
+func NewFactoryGRPC(executionContext context.Context, grpcClient grpc.ClientConnInterface, validationOptions ...astvalidation.Option) (*Factory[Configuration], error) {
 	if executionContext == nil {
 		return nil, fmt.Errorf("execution context is required")
 	}
@@ -1754,8 +1750,9 @@ func NewFactoryGRPC(executionContext context.Context, grpcClient grpc.ClientConn
 	}
 
 	return &Factory[Configuration]{
-		executionContext: executionContext,
-		grpcClient:       grpcClient,
+		executionContext:  executionContext,
+		grpcClient:        grpcClient,
+		validationOptions: validationOptions,
 	}, nil
 }
 
@@ -1764,7 +1761,7 @@ func NewFactoryGRPC(executionContext context.Context, grpcClient grpc.ClientConn
 // This is useful when you don't want to provide a static client to the factory and let the consumer
 // decide how to provide the client to the datasource.
 // For example, when you need to recreate the client in case of a connection error.
-func NewFactoryGRPCClientProvider(executionContext context.Context, clientProvider func() grpc.ClientConnInterface) (*Factory[Configuration], error) {
+func NewFactoryGRPCClientProvider(executionContext context.Context, clientProvider func() grpc.ClientConnInterface, validationOptions ...astvalidation.Option) (*Factory[Configuration], error) {
 	if executionContext == nil {
 		return nil, fmt.Errorf("execution context is required")
 	}
@@ -1776,11 +1773,16 @@ func NewFactoryGRPCClientProvider(executionContext context.Context, clientProvid
 	return &Factory[Configuration]{
 		executionContext:   executionContext,
 		grpcClientProvider: clientProvider,
+		validationOptions:  validationOptions,
 	}, nil
 }
 
 func (p *Planner[T]) getKit() *printKit {
-	return printKitPool.Get().(*printKit)
+	kit := printKitPool.Get().(*printKit)
+	validator := astvalidation.DefaultOperationValidator(p.validationOptions...)
+	validator.RegisterRule(astvalidation.ValidateEmptySelectionSets())
+	kit.validator = validator
+	return kit
 }
 
 func (p *Planner[T]) releaseKit(kit *printKit) {
@@ -1799,6 +1801,7 @@ func (f *Factory[T]) Planner(logger abstractlogger.Logger) plan.DataSourcePlanne
 		fetchClient:        f.httpClient,
 		grpcClient:         grpcClient,
 		subscriptionClient: f.subscriptionClient,
+		validationOptions:  f.validationOptions,
 	}
 }
 

@@ -1129,6 +1129,35 @@ func TestExecutionValidation(t *testing.T) {
 								}`, FieldSelectionMerging(), Invalid,
 							withValidationErrors(`fields 'scalar' conflict because they return conflicting types 'String!' and 'String'`))
 					})
+					t.Run("allows differing scalar nullability on interface vs non implementing object type with relaxation", func(t *testing.T) {
+						runWithDefinition(t, interfaceNonImplementorDefinition, `
+								{
+									item {
+										... on Printable { title }
+										... on Podcast   { title }
+									}
+								}`, FieldSelectionMerging(true), Valid)
+					})
+					t.Run("rejects differing scalar nullability on interface vs non implementing object type without relaxation", func(t *testing.T) {
+						runWithDefinition(t, interfaceNonImplementorDefinition, `
+								{
+									item {
+										... on Printable { title }
+										... on Podcast   { title }
+									}
+								}`, FieldSelectionMerging(), Invalid,
+							withValidationErrors(`fields 'title' conflict because they return conflicting types 'String!' and 'String'`))
+					})
+					t.Run("rejects differing nullability on interface vs implementing object type even with relaxation", func(t *testing.T) {
+						runWithDefinition(t, interfaceNonImplementorDefinition, `
+								{
+									item {
+										... on Printable { name }
+										... on Book      { name }
+									}
+								}`, FieldSelectionMerging(true), Invalid,
+							withValidationErrors(`fields 'name' conflict because they return conflicting types 'String' and 'String!'`))
+					})
 					t.Run("same wrapped scalar return types", func(t *testing.T) {
 						runWithDefinition(t, boxDefinition, `
 							{
@@ -5728,6 +5757,40 @@ union Entity = User | Organization
 type Query {
 	entity: Entity
 	node: Node
+}
+
+schema {
+	query: Query
+}`
+
+// interfaceNonImplementorDefinition models a union whose members include both
+// a type that implements an interface (Printable) and a type (Podcast) that does
+// NOT implement it. This lets us test nullability relaxation when one inline
+// fragment targets an interface and the other targets a non implementing object
+// type.
+const interfaceNonImplementorDefinition = `
+scalar String
+scalar Int
+scalar ID
+
+interface Printable {
+	title: String!
+	name: String
+}
+
+type Book implements Printable {
+	title: String!
+	name: String!
+}
+
+type Podcast {
+	title: String
+}
+
+union SearchResult = Book | Podcast
+
+type Query {
+	item: SearchResult
 }
 
 schema {

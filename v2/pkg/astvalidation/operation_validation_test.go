@@ -173,7 +173,7 @@ func TestExecutionValidation(t *testing.T) {
 						withValidationErrors(`operation name must be unique: getName`))
 				})
 				t.Run("94", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								query dogOperation {
   									dog {
   										name
@@ -245,7 +245,7 @@ func TestExecutionValidation(t *testing.T) {
 						SubscriptionSingleRootField(), Valid)
 				})
 				t.Run("97 variant", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								query sub {
   									foo
 									bar
@@ -253,7 +253,7 @@ func TestExecutionValidation(t *testing.T) {
 						SubscriptionSingleRootField(), Valid)
 				})
 				t.Run("97 variant", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								subscription sub {
   									... { foo }
   									... { bar }
@@ -274,7 +274,7 @@ func TestExecutionValidation(t *testing.T) {
 						SubscriptionSingleRootField(), Valid)
 				})
 				t.Run("99", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								subscription sub {
   									newMessage {
     									body
@@ -286,7 +286,7 @@ func TestExecutionValidation(t *testing.T) {
 						withValidationErrors(`subscription: sub must only have one root selection`))
 				})
 				t.Run("100", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								subscription sub {
   									...multipleSubscriptions
 								}
@@ -1115,19 +1115,33 @@ func TestExecutionValidation(t *testing.T) {
 								}`, FieldSelectionMerging(), Invalid,
 							withValidationErrors(`differing types 'Profile!' and 'Profile' for objectName 'profile'`))
 					})
-					t.Run("disallows differing return type nullability when interface could overlap", func(t *testing.T) {
-						runWithDefinition(t, boxDefinition, `
+					t.Run("allows differing scalar nullability on interface vs non implementing object type with relaxation", func(t *testing.T) {
+						runWithDefinition(t, interfaceNonImplementorDefinition, `
 								{
-									someBox {
-										... on NonNullStringBox1 {
-											scalar
-										}
-										... on StringBox {
-											scalar
-										}
+									item {
+										... on Printable { title }
+										... on Podcast   { title }
+									}
+								}`, FieldSelectionMerging(true), Valid)
+					})
+					t.Run("rejects differing scalar nullability on interface vs non implementing object type without relaxation", func(t *testing.T) {
+						runWithDefinition(t, interfaceNonImplementorDefinition, `
+								{
+									item {
+										... on Printable { title }
+										... on Podcast   { title }
 									}
 								}`, FieldSelectionMerging(), Invalid,
-							withValidationErrors(`fields 'scalar' conflict because they return conflicting types 'String!' and 'String'`))
+							withValidationErrors(`fields 'title' conflict because they return conflicting types 'String!' and 'String'`))
+					})
+					t.Run("allows matching types on interface vs implementing object type with relaxation", func(t *testing.T) {
+						runWithDefinition(t, interfaceNonImplementorDefinition, `
+								{
+									item {
+										... on Printable { title }
+										... on Book      { title }
+									}
+								}`, FieldSelectionMerging(true), Valid)
 					})
 					t.Run("same wrapped scalar return types", func(t *testing.T) {
 						runWithDefinition(t, boxDefinition, `
@@ -1200,7 +1214,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("107 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query mergeIdenticalFields {
   								dog {
 									name
@@ -1225,7 +1239,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing fields for objectName 'name' on (potentially) same type`))
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									name: nickname
@@ -1265,7 +1279,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extra { string }
@@ -1275,7 +1289,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extra { string }
@@ -1306,7 +1320,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing types '[DogExtra]' and '[DogExtra]!' for objectName 'extras'`))
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									x: extras { string }
@@ -1317,7 +1331,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing types '[DogExtra]' and '[DogExtra]!' for objectName 'x'`))
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extras { string,string2: string }
@@ -1327,7 +1341,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extras { string,string2: string }
@@ -1337,7 +1351,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extras { string,string2: string2 }
@@ -1348,7 +1362,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing fields for objectName 'string2' on (potentially) same type`))
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extras { ... { string },string2: string }
@@ -1368,7 +1382,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing fields for objectName 'string' on (potentially) same type`))
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extras { ...frag, ...frag }
@@ -1397,7 +1411,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing fields for objectName 'string1' on (potentially) same type`))
 			})
 			t.Run("108 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingBecauseAlias {
 								dog {
   									extras { ...frag }
@@ -1518,7 +1532,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("109 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							fragment mergeIdenticalFieldsWithIdenticalValues on Dog {
   								doesKnowCommand(dogCommand: 1)
     							doesKnowCommand(dogCommand: 0)
@@ -1595,7 +1609,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing fields for objectName 'doesKnowCommand' on (potentially) same type`))
 			})
 			t.Run("109 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							fragment mergeIdenticalFieldsWithIdenticalValues on Dog {
   								doesKnowCommand(dogCommand: {foo: "bar"})
     							doesKnowCommand(dogCommand: {foo: "bar"})
@@ -1603,7 +1617,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("109 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							fragment mergeIdenticalFieldsWithIdenticalValues on Dog {
   								doesKnowCommand(dogCommand: {foo: "bar"})
     							doesKnowCommand(dogCommand: {bar: "bar"})
@@ -1661,7 +1675,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`differing fields for objectName 'doesKnowCommand' on (potentially) same type`))
 			})
 			t.Run("111", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							fragment safeDifferingFields on Pet {
 								... on Dog {
 									volume: barkVolume
@@ -1694,7 +1708,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`fields 'someValue' conflict because they return conflicting types 'String!' and 'Int'`))
 			})
 			t.Run("112 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							fragment conflictingDifferingResponses on Pet {
 								... on Dog {
 									extra {
@@ -1974,7 +1988,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Invalid, withExpectNormalizationError())
 			})
 			t.Run("112 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query conflictingDifferingResponses {
 								catOrDog {
 									...catDogFrag
@@ -2036,7 +2050,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelectionMerging(), Valid)
 			})
 			t.Run("112 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							fragment conflictingDifferingResponses on Pet {
 								...dogFrag
 								... on Cat {
@@ -2097,7 +2111,7 @@ func TestExecutionValidation(t *testing.T) {
 								extra {
 									... on CatExtra { value: bool }
 									... on DogExtra { value: bool }
-								}	
+								}
 							}`,
 					FieldSelectionMerging(), Invalid,
 					withValidationErrors(`fields 'value' conflict because they return conflicting types 'Boolean' and 'Int'`))
@@ -2150,7 +2164,7 @@ func TestExecutionValidation(t *testing.T) {
 					FieldSelections(), Invalid, withExpectNormalizationError())
 			})
 			t.Run("116", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query directQueryOnObjectWithoutSubFields {
 								human
 							}`,
@@ -2182,7 +2196,7 @@ func TestExecutionValidation(t *testing.T) {
 	t.Run("5.4 Arguments", func(t *testing.T) {
 		t.Run("5.4.1 Argument Names", func(t *testing.T) {
 			t.Run("117", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							fragment argOnRequiredArg on Dog {
 								doesKnowCommand(dogCommand: SIT)
 							}
@@ -2216,7 +2230,7 @@ func TestExecutionValidation(t *testing.T) {
 					KnownArguments(), Valid)
 			})
 			t.Run("117 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query argOnRequiredArg($dogCommand: DogCommand = SIT) {
 								dog {
 									doesKnowCommand(dogCommand: $dogCommand)
@@ -2261,7 +2275,7 @@ func TestExecutionValidation(t *testing.T) {
 					Values(), Valid)
 			})
 			t.Run("117 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query argOnRequiredArg($booleanArg: Boolean!) {
 								dog {
 									...argOnOptional
@@ -2273,7 +2287,7 @@ func TestExecutionValidation(t *testing.T) {
 					Values(), Valid)
 			})
 			t.Run("117 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							query argOnRequiredArg($booleanArg: Boolean) {
 								dog {
 									...argOnOptional
@@ -2337,7 +2351,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`Variable "$intArg" of type "Integer" used in position expecting type "Boolean".`))
 			})
 			t.Run("118", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							{
 								dog { ...invalidArgName}
 							}
@@ -2348,7 +2362,7 @@ func TestExecutionValidation(t *testing.T) {
 					withValidationErrors(`Unknown argument "command" on field "Dog.doesKnowCommand"`))
 			})
 			t.Run("118 variant", func(t *testing.T) {
-				run(t, `	
+				run(t, `
 							{
 								dog { ...invalidArgName}
 							}
@@ -2380,7 +2394,7 @@ func TestExecutionValidation(t *testing.T) {
 			})
 			t.Run("undefined arg", func(t *testing.T) {
 				run(t, `	{
-								dog(name: "Goofy"){ 
+								dog(name: "Goofy"){
 									name
 								}
 							}`,
@@ -2561,7 +2575,7 @@ func TestExecutionValidation(t *testing.T) {
 						Fragments(), Valid)
 				})
 				t.Run("127", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								{
   									dog {
     									...fragmentOne
@@ -2604,13 +2618,13 @@ func TestExecutionValidation(t *testing.T) {
 							}`, Fragments(), Valid)
 				})
 				t.Run("129", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								fragment notOnExistingType on NotInSchema {
   									name
 								}`, Fragments(), Invalid, withExpectNormalizationError())
 				})
 				t.Run("129", func(t *testing.T) {
-					run(t, `	
+					run(t, `
 								fragment inlineNotExistingType on Dog {
   									... on NotInSchema {
     									name
@@ -3052,7 +3066,7 @@ func TestExecutionValidation(t *testing.T) {
 							`
 									{
 										titles {
-											... on Name {	
+											... on Name {
 												... on A {
 													name
 												}
@@ -4561,7 +4575,7 @@ func TestValidationEdgeCases(t *testing.T) {
 			  __typename
 			  status
 			  message
-			}  
+			}
 		  }
 		}`, false,
 	))
@@ -4571,7 +4585,7 @@ func TestValidationEdgeCases(t *testing.T) {
 		scalar _Any
 		scalar String
 		union _Entity = User
-		
+
 		extend type Query {
 			_entities(representations: [_Any!]!): [_Entity]!
 		}
@@ -4586,8 +4600,8 @@ func TestValidationEdgeCases(t *testing.T) {
 		`
 		query($representations: [_Any!]!) {
 			_entities(representations: $representations) {
-				... on User { 
-					name 
+				... on User {
+					name
 				}
 			}
 		}`, true,
@@ -5734,6 +5748,46 @@ schema {
 	query: Query
 }`
 
+// interfaceNonImplementorDefinition models a union whose members include both
+// types that implement an interface (Printable) and a type (Podcast) that does
+// NOT implement it. This lets us test nullability relaxation when one inline
+// fragment targets an interface and the other targets a non implementing object
+// type.
+const interfaceNonImplementorDefinition = `
+scalar String
+scalar Int
+scalar ID
+
+interface Printable {
+	title: String!
+	name: String!
+}
+
+type Book implements Printable {
+	title: String!
+	name: String!
+}
+
+type Magazine implements Printable {
+	title: String!
+	name: String!
+}
+
+type Podcast {
+	title: String
+	name: String!
+}
+
+union SearchResult = Book | Magazine | Podcast
+
+type Query {
+	item: SearchResult
+}
+
+schema {
+	query: Query
+}`
+
 const countriesDefinition = `directive @cacheControl(maxAge: Int, scope: CacheControlScope) on FIELD_DEFINITION | OBJECT | INTERFACE
 
 scalar String
@@ -6261,7 +6315,7 @@ input UpdateUserInput {
 }
 """
 The @cache directive caches the response server side and sets cache control headers according to the configuration.
-With this setting you can reduce the load on your backend systems for operations that get hit a lot while data doesn't change that frequently. 
+With this setting you can reduce the load on your backend systems for operations that get hit a lot while data doesn't change that frequently.
 """
 directive @cache(
   """maxAge defines the maximum time in seconds a response will be understood 'fresh', defaults to 300 (5 minutes)"""
@@ -6269,7 +6323,7 @@ directive @cache(
   """
   vary defines the headers to append to the cache key
   In addition to all possible headers you can also select a custom claim for authenticated requests
-  Examples: 'jwt.sub', 'jwt.team' to vary the cache key based on 'sub' or 'team' fields on the jwt. 
+  Examples: 'jwt.sub', 'jwt.team' to vary the cache key based on 'sub' or 'team' fields on the jwt.
   """
   vary: [String]! = []
 ) on QUERY
